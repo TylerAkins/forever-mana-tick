@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Forever Mana Tick
-## Notes: Five-second-rule countdown, estimated mana ticks, and mana changes on the default player mana bar.
+## Notes: Mana and energy tick estimates, a mana five-second-rule countdown, and resource changes on the default player power bar.
 ## Author: Tyler Akins, Dustin Checketts
 ## Version: @project-version@
 ## X-License: MIT

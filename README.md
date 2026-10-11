@@ -1,13 +1,13 @@
 # Forever Mana Tick
 
-Mana timing indicators for the default player mana bar in **WoW Forever**.
+Mana and energy timing indicators for the default player power bar in **WoW Forever**.
 
 ## Features
 
-- A spark moves from right to left for five seconds after observed mana spending.
-- A second spark moves from left to right over an estimated two-second regeneration cycle.
-- Mana gains appear in blue and losses in purple, then fade.
-- Indicators hide while a non-mana resource is active. No configuration, saved variables, or dependencies are required.
+- A spark moves from right to left for five seconds after a readable mana-cost cast or observed mana spending. Known periodic mana channels hold the countdown until the channel stops.
+- A second spark moves from left to right over an estimated two-second mana or energy regeneration cycle.
+- Readable mana gains appear in blue, energy gains in yellow, and losses in purple, then fade.
+- The display switches between mana and energy, including druid cat form. Other resources hide the indicators. No configuration, saved variables, or dependencies are required.
 
 ## Installation
 
@@ -21,7 +21,9 @@ This port targets WoW Forever beta build **1.60.1.70338**, Interface **16001**. 
 
 The addon follows Blizzard's default player mana bar. Replacement unit frames that hide that bar will also hide the indicators.
 
-Tick timing is an estimate based on observed mana gains. Potions, refunds, and other gains can reset the cycle. Observed mana losses start the five-second countdown; events do not identify whether every loss suppresses regeneration. At full mana the tick spark hides. The display does not predict a guaranteed amount of mana or change regeneration.
+When power values are restricted, successful casts with readable mana costs can still start an estimated five-second countdown. A native mana/energy percentage curve controls the regeneration spark's opacity at full resource; its result goes directly to the display. The sweep uses a public clock and does not measure restricted regeneration ticks. Gain/loss text pauses until values become accessible, then starts from a fresh baseline.
+
+Tick timing is an estimate that can synchronize to readable resource gains. Potions, refunds, and other gains can reset the cycle. Observed mana losses start the five-second countdown; events do not identify whether every loss suppresses regeneration. A spell-cost countdown can also differ from actual spending after discounts or refunds. If spell information is restricted too, that cast cannot start the countdown. At full mana or energy the regeneration spark disappears. The display does not predict a guaranteed amount of regeneration or change regeneration.
 
 ## Development
 
