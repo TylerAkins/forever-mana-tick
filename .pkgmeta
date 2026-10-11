@@ -1,0 +1,15 @@
+package-as: ForeverManaTick
+manual-changelog:
+  filename: RELEASE_NOTES.md
+  markup-type: markdown
+ignore:
+  - .git
+  - .github
+  - .gitignore
+  - .pkgmeta
+  - VERSION
+  - docs
+  - tools
+  - tests
+  - "**/.DS_Store"
+  - "**/__pycache__"

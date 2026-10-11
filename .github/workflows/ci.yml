@@ -1,0 +1,37 @@
+name: CI
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+          luac5.1 -p ForeverManaTick.lua
+          lua5.1 tests/runtime.lua
+          python3 -m unittest discover -s tests
+      - name: Build and inspect
+        run: |
+          bash tools/package.sh
+          unzip -q .release/ForeverManaTick-*.zip -d "$RUNNER_TEMP/addon"
+          luac5.1 -p "$RUNNER_TEMP/addon/ForeverManaTick/ForeverManaTick.lua"
+          unzip -l .release/ForeverManaTick-*.zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ForeverManaTick-${{ github.sha }}
+          path: .release/*
+          include-hidden-files: true
+          if-no-files-found: error

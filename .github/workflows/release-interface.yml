@@ -1,0 +1,66 @@
+name: Release reviewed interface update
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: release-reviewed-interface
+  cancel-in-progress: false
+jobs:
+  release:
+    if: vars.RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Plan patch release
+        id: plan
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then exit 0; fi
+          previous_interface="$(git show "${BEFORE_SHA}:ForeverManaTick.toc" | sed -n 's/^## Interface: //p')"
+          current_interface="$(sed -n 's/^## Interface: //p' ForeverManaTick.toc)"
+          if [[ "$previous_interface" == "$current_interface" ]]; then exit 0; fi
+          previous_version="$(git show "${BEFORE_SHA}:VERSION" | tr -d '[:space:]')"
+          current_version="$(tr -d '[:space:]' < VERSION)"
+          tag="$(python3 tools/release.py validate \
+            --previous-version "$previous_version" --current-version "$current_version" \
+            --release-content-changed)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Verify candidate
+        if: steps.plan.outputs.tag != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+          lua5.1 tests/runtime.lua
+          python3 -m unittest discover -s tests
+          bash tools/package.sh
+      - name: Tag and dispatch approved automatic release
+        if: steps.plan.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            existing_sha="$(git rev-list -n 1 "$RELEASE_TAG")"
+            python3 tools/release.py validate-tag --existing-sha "$existing_sha" --target-sha "$GITHUB_SHA"
+          else
+            git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              tag -a "$RELEASE_TAG" "$GITHUB_SHA" -m "Release $RELEASE_TAG"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh workflow run release.yml --ref "$RELEASE_TAG"
+          fi
