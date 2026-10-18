@@ -1,3 +1,4 @@
 .release/
+.compiled/
 __pycache__/
 .DS_Store

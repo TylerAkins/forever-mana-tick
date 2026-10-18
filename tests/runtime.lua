@@ -1,5 +1,6 @@
-local function Run(layout)
+local function Run(layout, savedScale)
 local now, mana, maximum, resource = 100, 500, 1000, 0
+ForeverManaTickDB = savedScale and {sparkScale = savedScale} or nil
 local function RestrictedOperation() error('attempt to use restricted mana') end
 local secret = setmetatable({}, {__sub = RestrictedOperation, __lt = RestrictedOperation,
     __le = RestrictedOperation, __concat = RestrictedOperation, __tostring = RestrictedOperation})
@@ -13,13 +14,17 @@ local function Region()
         ClearAllPoints = function(self) self.point = nil end,
         SetTexture = function() end,
         SetBlendMode = function() end,
-        SetSize = function() end,
+        SetSize = function(self, width, height) self.size = {width, height} end,
         SetText = function(self, value) self.text = value end,
         SetTextColor = function(self, ...) self.color = {...} end,
         SetAlpha = function(self, value) self.alpha = value end,
     }
 end
-local manaBar = {GetWidth = function() return 100 end, GetFrameLevel = function() return 2 end}
+local manaBar = {
+    GetWidth = function() return 100 end,
+    GetHeight = function() return 24 end,
+    GetFrameLevel = function() return 2 end,
+}
 local playerFrame = {PlayerFrameContent = {PlayerFrameContentMain = {ManaBarArea = {ManaBar = manaBar}}}}
 PlayerFrameManaBar = layout == 'legacy' and manaBar or nil
 PlayerFrame = (layout == 'forever' or layout == 'secret') and playerFrame or nil
@@ -54,9 +59,9 @@ C_Spell = {GetSpellPowerCost = function(id)
     assert(not rawequal(id, secret), 'secret spell ID must never be queried')
     return spellCosts[id]
 end}
-local frame
-CreateFrame = function()
-    frame = {
+local frame, slider, optionsPanel, settingsCategory
+local function BaseFrame()
+    return {
         scripts = {}, events = {},
         RegisterEvent = function(self, event) self.events[event] = true end,
         UnregisterEvent = function(self, event) self.events[event] = nil end,
@@ -68,8 +73,39 @@ CreateFrame = function()
         CreateTexture = function() local r = Region(); textures[#textures + 1] = r; return r end,
         CreateFontString = function() local r = Region(); texts[#texts + 1] = r; return r end,
     }
-    return frame
 end
+CreateFrame = function(frameType)
+    if frameType == 'Slider' then
+        slider = {
+            scripts = {},
+            SetWidth = function(self, value) self.width = value end,
+            SetMinMaxValues = function(self, low, high) self.range = {low, high} end,
+            SetValueStep = function(self, value) self.step = value end,
+            SetObeyStepOnDrag = function(self, value) self.obeyStep = value end,
+            SetPoint = function(self, ...) self.point = {...} end,
+            SetScript = function(self, event, fn) self.scripts[event] = fn end,
+            SetValue = function(self, value) self.value = value end,
+            CreateFontString = function() return Region() end,
+        }
+        return slider
+    end
+    local newFrame = BaseFrame()
+    if frameType == 'Frame' and frame then
+        optionsPanel = newFrame
+        optionsPanel.CreateFontString = function() return Region() end
+    else
+        frame = newFrame
+    end
+    return newFrame
+end
+Settings = {
+    RegisterCanvasLayoutCategory = function(panel, name)
+        assert(name == 'Forever Mana Tick')
+        settingsCategory = {panel = panel, GetID = function() return 17 end}
+        return settingsCategory
+    end,
+    RegisterAddOnCategory = function(category) assert(category == settingsCategory) end,
+}
 assert(loadfile('ForeverManaTick.lua'))('ForeverManaTick')
 local function Event(event, unit, power, spell) frame.scripts.OnEvent(frame, event, unit, power, spell) end
 local function Draw() frame.scripts.OnUpdate(frame, 0.1) end
@@ -89,6 +125,8 @@ if layout == 'delayed' then
 end
 assert(frame.scripts.OnUpdate, 'mana display must initialize on ' .. layout .. ' frame layout')
 assert(frame.parent == manaBar, 'display must attach to the visible mana bar')
+assert(optionsPanel.name == 'Forever Mana Tick' and settingsCategory.panel == optionsPanel,
+    'the spark control is registered in the addon settings category')
 if layout == 'secret' then
     Draw()
     assert(not textures[1].shown and textures[2].shown and not texts[1].shown)
@@ -206,9 +244,40 @@ end
 resource = 0; mana = 500; maximum = 1000
 Event('UNIT_DISPLAYPOWER', 'player'); Draw()
 assert(not texts[1].shown and not textures[1].shown, 'return to mana resets energy baseline')
+resource = 3; mana = 30; maximum = 100; now = 400
+Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+now = 400.2; Change(31, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+now = 401; Change(51, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+assert(textures[2].point[4] == 0, 'a recognizable 20-energy gain synchronizes inside the gain throttle')
+mana = 30; now = 410; Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+now = 410.2; Change(31, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+now = 411; Change(71, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+assert(textures[2].point[4] == 0, 'a recognizable 40-energy gain synchronizes the sweep')
+mana = 90; now = 420; Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+now = 420.4; Change(100, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+assert(not textures[2].shown, 'the sweep remains hidden at maximum energy')
+now = 421; Change(99, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+assert(math.abs(textures[2].point[4] - 30) < 0.001, 'a gain that reached maximum synchronizes the next sweep')
+mana = 30; now = 430; Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+now = 430.2; Change(31, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+now = 431; Change(34, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+assert(textures[2].point[4] == 50, 'unrecognized energy gains leave the two-second estimate running')
+now = 432; Draw()
+assert(textures[2].point[4] == 0, 'the two-second estimate wraps when no tick is observed')
+assert(slider and slider.range[1] == 0.5 and slider.range[2] == 1.5, 'settings expose the spark scale slider')
+assert(slider.step == 0.05 and slider.value == (savedScale or 1), 'slider loads its default or saved scale')
+assert(textures[1].size[2] == 24 * 1.5 * (savedScale or 1), '100% uses the previous 150% spark size')
+assert(textures[1].size[1] == 12 * 1.5 * (savedScale or 1), 'spark width preserves the original texture ratio')
+slider.scripts.OnValueChanged(slider, 1.25)
+assert(ForeverManaTickDB.sparkScale == 1.25, 'slider changes persist in the addon saved variable')
+assert(textures[1].size[2] == 45 and textures[2].size[2] == 45, 'slider updates both sparks immediately')
+slider.value = 0.5
+optionsPanel.scripts.OnShow(optionsPanel)
+assert(slider.value == 1.25 and ForeverManaTickDB.sparkScale == 1.25, 'opening settings refreshes the saved slider value')
 print('Runtime behavior checks passed: ' .. layout)
 end
 Run('forever')
 Run('legacy')
 Run('delayed')
 Run('secret')
+Run('forever', 1.25)
