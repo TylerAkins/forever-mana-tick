@@ -1,4 +1,5 @@
 ## Interface: 16001
+## SavedVariables: ForeverManaTickDB
 ## Title: Forever Mana Tick
 ## Notes: Mana and energy tick estimates, a mana five-second-rule countdown, and resource changes on the default player power bar.
 ## Author: Tyler Akins, Dustin Checketts

@@ -3,11 +3,18 @@ local MANA = 0
 local ENERGY = 3
 local TICK_SECONDS = 2
 local FSR_SECONDS = 5
+local SPARK_SCALE_MIN = 0.5
+local SPARK_SCALE_MAX = 1.5
+local SPARK_SCALE_STEP = 0.05
+local SPARK_BASE_SCALE = 1.5
+local ADDON_TITLE = "Forever Mana Tick"
 local frame = CreateFrame("Frame")
 local bar, fsrSpark, regenSpark, gainText
 local previousPower, lastSpend, tickStart, textStart
 local channelMana, visibilityCurve
-local lastGainTime
+local lastManaGainTime
+local sparkScale = 1
+local applyingSettings
 
 local function Readable(value)
     return not issecretvalue or not issecretvalue(value)
@@ -42,10 +49,81 @@ local function ReadPower(powerType)
     return current, maximum
 end
 
+local function IsEnergyTick(delta, current, maximum)
+    if (delta > 18 and delta < 22) or (delta > 38 and delta < 42) then return true end
+    return current == maximum and delta > 0 and delta < 42
+end
+
+local function NormalizeSparkScale(value)
+    if type(value) ~= "number" or value ~= value then return 1 end
+    value = math.max(SPARK_SCALE_MIN, math.min(SPARK_SCALE_MAX, value))
+    value = math.floor(value / SPARK_SCALE_STEP + 0.5) * SPARK_SCALE_STEP
+    return value
+end
+
+local function UpdateSparkSize()
+    if not fsrSpark or not regenSpark then return end
+    local height = bar:GetHeight() * SPARK_BASE_SCALE * sparkScale
+    local width = height / 2
+    fsrSpark:SetSize(width, height)
+    regenSpark:SetSize(width, height)
+end
+
+local function SetSparkScale(value)
+    sparkScale = NormalizeSparkScale(value)
+    ForeverManaTickDB.sparkScale = sparkScale
+    UpdateSparkSize()
+end
+
+local function CreateOptions()
+    local panel = CreateFrame("Frame")
+    panel.name = ADDON_TITLE
+
+    local label = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    label:SetPoint("TOPLEFT", 16, -16)
+    label:SetText("Spark size")
+
+    local slider = CreateFrame("Slider", nil, panel, "OptionsSliderTemplate")
+    slider:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -12)
+    slider:SetWidth(240)
+    slider:SetMinMaxValues(SPARK_SCALE_MIN, SPARK_SCALE_MAX)
+    slider:SetValueStep(SPARK_SCALE_STEP)
+    slider:SetObeyStepOnDrag(true)
+    if not slider.Text then
+        slider.Text = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        slider.Text:SetPoint("TOP", slider, "BOTTOM", 0, -2)
+    end
+    if slider.Low then slider.Low:SetText("50%") end
+    if slider.High then slider.High:SetText("150%") end
+
+    local function Refresh()
+        applyingSettings = true
+        slider:SetValue(sparkScale)
+        slider.Text:SetText(string.format("%d%%", math.floor(sparkScale * 100 + 0.5)))
+        applyingSettings = false
+    end
+
+    slider:SetScript("OnValueChanged", function(_, value)
+        local normalized = NormalizeSparkScale(value)
+        slider.Text:SetText(string.format("%d%%", math.floor(normalized * 100 + 0.5)))
+        if applyingSettings then return end
+        SetSparkScale(normalized)
+    end)
+    panel:SetScript("OnShow", Refresh)
+    Refresh()
+
+    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+        local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+        Settings.RegisterAddOnCategory(category)
+    elseif InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(panel)
+    end
+end
+
 local function ClearTracking()
     previousPower, lastSpend, textStart = nil, nil, nil
     channelMana = nil
-    lastGainTime = nil
+    lastManaGainTime = nil
     tickStart = GetTime()
     if gainText then
         fsrSpark:Hide()
@@ -81,11 +159,11 @@ local function CreateDisplay()
         local texture = frame:CreateTexture(nil, "OVERLAY")
         texture:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
         texture:SetBlendMode("ADD")
-        texture:SetSize(16, 32)
         texture:Hide()
         return texture
     end
     fsrSpark, regenSpark = Spark(), Spark()
+    UpdateSparkSize()
     gainText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     gainText:SetPoint("LEFT", bar, "RIGHT", 5, -2)
     gainText:Hide()
@@ -151,6 +229,10 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
     if event == "ADDON_LOADED" then
         if unit ~= addonName then return end
         self:UnregisterEvent("ADDON_LOADED")
+        if type(ForeverManaTickDB) ~= "table" then ForeverManaTickDB = {} end
+        sparkScale = NormalizeSparkScale(ForeverManaTickDB.sparkScale)
+        ForeverManaTickDB.sparkScale = sparkScale
+        CreateOptions()
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
         self:RegisterEvent("PLAYER_LOGIN")
         return
@@ -184,7 +266,7 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
             local resource = UnitPowerType("player")
             if not Readable(resource) or (resource ~= MANA and resource ~= ENERGY) then return end
             if (resource == MANA and powerType ~= "MANA") or (resource == ENERGY and powerType ~= "ENERGY") then return end
-            local current = ReadPower(resource)
+            local current, maximum = ReadPower(resource)
             if not current then
                 previousPower, textStart = nil, nil
                 gainText:Hide()
@@ -201,10 +283,14 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
                 if delta < 0 then
                     if resource == MANA then lastSpend = now end
                 else
-                    -- Power events do not identify potions, heals, or natural regeneration.
-                    -- Continuous power updates must not restart the sweep every frame.
-                    if not lastGainTime or now - lastGainTime >= 1.4 then tickStart = now end
-                    lastGainTime = now
+                    if resource == ENERGY then
+                        if IsEnergyTick(delta, current, maximum) then tickStart = now end
+                    else
+                        -- Mana events do not identify potions, heals, or natural regeneration.
+                        -- Continuous power updates must not restart the sweep every frame.
+                        if not lastManaGainTime or now - lastManaGainTime >= 1.4 then tickStart = now end
+                        lastManaGainTime = now
+                    end
                 end
                 gainText:SetText((delta > 0 and "+" or "") .. delta)
                 if delta > 0 then
