@@ -25,20 +25,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
-          python-version: "3.12"
+          go-version-file: go.mod
+          cache: false
 
       - name: Fetch current Forever build
         run: |
           set -euo pipefail
-          VERSIONS_URL="$(PYTHONPATH=. python3 - <<'PY'
-          from tools.update_forever_interface import VERSIONS_URL
-
-          print(VERSIONS_URL)
-          PY
-          )"
+          VERSIONS_URL="$(go run ./cmd/fmt update-interface --print-url)"
           curl --fail --silent --show-error "$VERSIONS_URL" \
             --output "${RUNNER_TEMP}/forever-versions"
 
@@ -46,20 +42,13 @@ jobs:
         id: update
         run: |
           set -euo pipefail
-          python3 tools/update_forever_interface.py \
+          go run ./cmd/fmt update-interface \
             --versions-file "${RUNNER_TEMP}/forever-versions"
           if git diff --quiet -- ForeverManaTick.toc VERSION CHANGELOG.md RELEASE_NOTES.md; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          GAME_BUILD="$(PYTHONPATH=. python3 - "${RUNNER_TEMP}/forever-versions" <<'PY'
-          import sys
-          from pathlib import Path
-          from tools.update_forever_interface import parse_versions
-
-          print(parse_versions(Path(sys.argv[1]).read_text(encoding="utf-8")).version)
-          PY
-          )"
+          GAME_BUILD="$(go run ./cmd/fmt update-interface --versions-file "${RUNNER_TEMP}/forever-versions" --print-game-build)"
           {
             echo "changed=true"
             echo "version=$(tr -d '[:space:]' < VERSION)"
@@ -71,10 +60,10 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s tests
+          go test ./...
           sudo apt-get update
-          sudo apt-get install -y lua5.1
-          lua5.1 tests/runtime.lua
+          sudo apt-get install -y luajit
+          luajit tests/runtime.lua
 
       - name: Create pull request
         if: steps.update.outputs.changed == 'true'

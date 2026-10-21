@@ -30,7 +30,7 @@ Tick timing is an estimate that can synchronize to readable resource gains. Poti
 
 ## Development
 
-Run `luajit tests/runtime.lua` and `python3 -m unittest discover -s tests`. Lua 5.1 can also run the runtime tests. Build an installable ZIP with `bash tools/package.sh`. Build a clean local addon directory with `python3 tools/compile_addon.py`; add `--install` to copy it into the Forever beta client's AddOns folder. Use `--addons-dir /path/to/Interface/AddOns` to select a different client installation.
+Run `luajit tests/runtime.lua` and `go test ./...`. Lua 5.1 can also run the runtime tests. Build an installable ZIP with `bash tools/package.sh`. Build a clean local addon directory with `go run ./cmd/fmt compile-addon`; add `--install` to copy it into the Forever beta client's AddOns folder. Use `--addons-dir /path/to/Interface/AddOns` to select a different client installation.
 
 See [development notes](docs/DEVELOPMENT.md) for source analysis and the in-game checklist, and [release setup](docs/RELEASING.md) for GitHub and CurseForge setup.
 

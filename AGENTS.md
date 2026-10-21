@@ -15,9 +15,9 @@ Forever Mana Tick is a small World of Warcraft Forever addon. Keep runtime code 
 From the repository root, run:
 
 ```sh
-luac5.1 -p ForeverManaTick.lua
-lua5.1 tests/runtime.lua
-python3 -m unittest discover -s tests
+luajit -b ForeverManaTick.lua /dev/null
+luajit tests/runtime.lua
+go test ./...
 ```
 
 The runtime fixture models the client API and restricted-value behavior. It does not establish in-game visual placement or WoW's full taint behavior. Follow the checklist in `docs/DEVELOPMENT.md` for client verification. Build and inspect a release archive with `bash tools/package.sh` when packaging changes are in scope.
