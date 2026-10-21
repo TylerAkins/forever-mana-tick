@@ -24,7 +24,7 @@ EnergyWatch Forever 1.0.7's Combat/ManaFiveSecond.lua provided a reference for r
 
 ## In-game verification before release
 
-Build and install the local addon with `python3 tools/compile_addon.py --install`. By default, the script targets `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns` on macOS. Set `WOW_FOREVER_ADDONS` or pass `--addons-dir /path/to/Interface/AddOns` to select another client. Use `python3 tools/compile_addon.py --dry-run` to list the build files without changing the output directory.
+Build and install the local addon with `go run ./cmd/fmt compile-addon --install`. By default, the script targets `/Applications/World of Warcraft/_classic_beta_/Interface/AddOns` on macOS. Set `WOW_FOREVER_ADDONS` or pass `--addons-dir /path/to/Interface/AddOns` to select another client. Use `go run ./cmd/fmt compile-addon --dry-run` to list the build files without changing the output directory.
 
 Record the build from GetBuildInfo.
 

@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 addon_version="$(tr -d '[:space:]' < VERSION)"
 [[ "$addon_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
-python3 tools/release.py validate-notes --version "$addon_version"
+go run ./cmd/fmt release validate-notes --version "$addon_version"
 package_stage="$(mktemp -d)"
 trap 'rm -rf "$package_stage"' EXIT
 mkdir -p "$package_stage/ForeverManaTick" .release

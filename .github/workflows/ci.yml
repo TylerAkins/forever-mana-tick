@@ -13,21 +13,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          python-version: "3.12"
+          go-version-file: go.mod
+          cache: true
       - name: Test
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.1
-          luac5.1 -p ForeverManaTick.lua
-          lua5.1 tests/runtime.lua
-          python3 -m unittest discover -s tests
+          sudo apt-get install -y luajit
+          luajit -b ForeverManaTick.lua /dev/null
+          luajit tests/runtime.lua
+          go test ./...
       - name: Build and inspect
         run: |
           bash tools/package.sh
           unzip -q .release/ForeverManaTick-*.zip -d "$RUNNER_TEMP/addon"
-          luac5.1 -p "$RUNNER_TEMP/addon/ForeverManaTick/ForeverManaTick.lua"
+          luajit -b "$RUNNER_TEMP/addon/ForeverManaTick/ForeverManaTick.lua" /dev/null
           unzip -l .release/ForeverManaTick-*.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

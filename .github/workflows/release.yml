@@ -19,24 +19,25 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          python-version: "3.12"
+          go-version-file: go.mod
+          cache: true
       - name: Validate approved tag and notes
         run: |
           addon_version="$(tr -d '[:space:]' < VERSION)"
           test "v$addon_version" = "$GITHUB_REF_NAME"
-          python3 tools/release.py validate-notes --version "$addon_version"
+          go run ./cmd/fmt release validate-notes --version "$addon_version"
           sudo apt-get update
-          sudo apt-get install -y lua5.1
-          luac5.1 -p ForeverManaTick.lua
-          lua5.1 tests/runtime.lua
-          python3 -m unittest discover -s tests
+          sudo apt-get install -y luajit
+          luajit -b ForeverManaTick.lua /dev/null
+          luajit tests/runtime.lua
+          go test ./...
       - name: Build and inspect release archive
         run: |
           bash tools/package.sh
           unzip -q .release/ForeverManaTick-*.zip -d "$RUNNER_TEMP/addon"
-          luac5.1 -p "$RUNNER_TEMP/addon/ForeverManaTick/ForeverManaTick.lua"
+          luajit -b "$RUNNER_TEMP/addon/ForeverManaTick/ForeverManaTick.lua" /dev/null
           unzip -l .release/ForeverManaTick-*.zip
       - name: Publish verified archive
         env:

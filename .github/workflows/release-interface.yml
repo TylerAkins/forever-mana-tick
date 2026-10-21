@@ -18,9 +18,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
-          python-version: "3.12"
+          go-version-file: go.mod
+          cache: true
       - name: Plan patch release
         id: plan
         env:
@@ -33,7 +34,7 @@ jobs:
           if [[ "$previous_interface" == "$current_interface" ]]; then exit 0; fi
           previous_version="$(git show "${BEFORE_SHA}:VERSION" | tr -d '[:space:]')"
           current_version="$(tr -d '[:space:]' < VERSION)"
-          tag="$(python3 tools/release.py validate \
+          tag="$(go run ./cmd/fmt release validate \
             --previous-version "$previous_version" --current-version "$current_version" \
             --release-content-changed)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -41,9 +42,9 @@ jobs:
         if: steps.plan.outputs.tag != ''
         run: |
           sudo apt-get update
-          sudo apt-get install -y lua5.1
-          lua5.1 tests/runtime.lua
-          python3 -m unittest discover -s tests
+          sudo apt-get install -y luajit
+          luajit tests/runtime.lua
+          go test ./...
           bash tools/package.sh
       - name: Tag and dispatch approved automatic release
         if: steps.plan.outputs.tag != ''
@@ -54,7 +55,7 @@ jobs:
           set -euo pipefail
           if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
             existing_sha="$(git rev-list -n 1 "$RELEASE_TAG")"
-            python3 tools/release.py validate-tag --existing-sha "$existing_sha" --target-sha "$GITHUB_SHA"
+            go run ./cmd/fmt release validate-tag --existing-sha "$existing_sha" --target-sha "$GITHUB_SHA"
           else
             git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
