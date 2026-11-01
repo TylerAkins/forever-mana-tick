@@ -4,7 +4,9 @@
 
 VERSION is the addon version source. RELEASE_NOTES.md contains the current release notes; CHANGELOG.md retains release history. Packaged TOCs resolve `@project-version@` to the release version.
 
-Run the runtime and updater tests, build the ZIP, inspect its contents and manifest, and complete the in-game checklist. Approve the version, exact notes, client scope, and destinations before setting the GitHub Actions variable `RELEASE_ENABLED` to `true` and publishing an annotated `v0.1.0` tag. The tag workflow validates the version and publishes the inspected archive with the same notes through the GitHub CLI. Do not move published tags.
+Run the runtime and updater tests and complete the in-game checklist. Approve the version, exact notes, client scope, and destinations before publishing an annotated version tag, such as `v1.0.0`. GitHub Actions validates the version, builds and inspects the ZIP, and publishes it with the release notes when the GitHub Actions variable `RELEASE_ENABLED` is `true`. Do not move published tags.
+
+Recheck `RELEASE_ENABLED` before publication; a matching tag push can publish immediately when it is `true`. Local version and notes preparation does not publish.
 
 The Wednesday updater prepares a pull request. A metadata change does not establish compatibility. Once `RELEASE_ENABLED` is approved and enabled, merging an interface update with the next patch version automatically creates the matching tag and dispatches publication, following the reference repository's behavior. Until then, merging does not publish. Approval to enable this variable must include that continuing automatic release policy.
 

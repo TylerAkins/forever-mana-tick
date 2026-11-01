@@ -249,7 +249,7 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
         self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
         self:SetScript("OnUpdate", UpdateDisplay)
     elseif Readable(unit) and unit == "player" then
-        if event == "UNIT_DISPLAYPOWER" or event == "UNIT_MAXPOWER" then
+        if event == "UNIT_DISPLAYPOWER" then
             Reset()
         elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
             local resource = UnitPowerType("player")
@@ -269,6 +269,11 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
             local current, maximum = ReadPower(resource)
             if not current then
                 previousPower, textStart = nil, nil
+                gainText:Hide()
+                return
+            end
+            if event == "UNIT_MAXPOWER" then
+                previousPower, textStart = current, nil
                 gainText:Hide()
                 return
             end

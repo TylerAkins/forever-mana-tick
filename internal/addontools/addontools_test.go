@@ -106,6 +106,18 @@ func TestEveryTOCEntryIsShipped(t *testing.T) {
 	}
 }
 
+func TestCurseForgeExcludesDevelopmentFiles(t *testing.T) {
+	metadata, err := os.ReadFile(filepath.Join(repositoryRoot(t), ".pkgmeta"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []string{"cmd", "internal", "go.mod", "AGENTS.md", ".compiled", ".release"} {
+		if !strings.Contains(string(metadata), "\n  - "+entry+"\n") {
+			t.Errorf(".pkgmeta must exclude %s from the installed addon", entry)
+		}
+	}
+}
+
 func TestInstallReplacesOnlyTheAddonDirectory(t *testing.T) {
 	root := repositoryRoot(t)
 	build := filepath.Join(t.TempDir(), "build", "ForeverManaTick")
