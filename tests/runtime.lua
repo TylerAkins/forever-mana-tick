@@ -1,5 +1,6 @@
 local function Run(layout, savedScale)
 local now, mana, maximum, resource = 100, 500, 1000, 0
+local inCombat = false
 ForeverManaTickDB = savedScale and {sparkScale = savedScale} or nil
 local function RestrictedOperation() error('attempt to use restricted mana') end
 local secret = setmetatable({}, {__sub = RestrictedOperation, __lt = RestrictedOperation,
@@ -15,7 +16,10 @@ local function Region()
         SetTexture = function() end,
         SetBlendMode = function() end,
         SetSize = function(self, width, height) self.size = {width, height} end,
-        SetText = function(self, value) self.text = value end,
+        SetText = function(self, value)
+            assert(not rawequal(value, secret), 'restricted values must not reach numeric text')
+            self.text = value
+        end,
         SetTextColor = function(self, ...) self.color = {...} end,
         SetAlpha = function(self, value) self.alpha = value end,
     }
@@ -67,9 +71,12 @@ local function BaseFrame()
         UnregisterEvent = function(self, event) self.events[event] = nil end,
         RegisterUnitEvent = function(self, event, unit) assert(unit == 'player'); self.events[event] = true end,
         SetScript = function(self, event, fn) self.scripts[event] = fn end,
-        SetParent = function(self, parent) self.parent = parent end,
-        SetAllPoints = function() end,
-        SetFrameLevel = function() end,
+        SetParent = function(self, parent)
+            assert(not inCombat, 'power events must not reparent frames during combat')
+            self.parent = parent
+        end,
+        SetAllPoints = function() assert(not inCombat, 'power events must not reanchor frames during combat') end,
+        SetFrameLevel = function() assert(not inCombat, 'power events must not change frame levels during combat') end,
         CreateTexture = function() local r = Region(); textures[#textures + 1] = r; return r end,
         CreateFontString = function() local r = Region(); texts[#texts + 1] = r; return r end,
     }
@@ -274,6 +281,84 @@ assert(textures[1].size[2] == 45 and textures[2].size[2] == 45, 'slider updates 
 slider.value = 0.5
 optionsPanel.scripts.OnShow(optionsPanel)
 assert(slider.value == 1.25 and ForeverManaTickDB.sparkScale == 1.25, 'opening settings refreshes the saved slider value')
+now = 500; resource = 0; mana = 500; maximum = 1000
+Event('PLAYER_ENTERING_WORLD'); Draw()
+inCombat = true
+Change(450)
+now = 501; mana = 600; maximum = 1200
+Event('UNIT_MAXPOWER', 'player', 'MANA'); Draw()
+assert(textures[1].shown and textures[1].point[4] == 80,
+    'capacity changes must preserve the active five-second countdown')
+assert(not texts[1].shown, 'capacity changes reset numeric tracking without fabricating a gain')
+Event('UNIT_POWER_UPDATE', 'player', 'MANA'); Draw()
+assert(not texts[1].shown, 'the new capacity establishes the numeric baseline')
+now = 505; Draw()
+assert(not textures[1].shown and textures[2].shown, 'capacity changes must not extend the countdown')
+Event('UNIT_SPELLCAST_CHANNEL_START', 'player', 'cast-guid', 128)
+now = 506; maximum = 1300
+Event('UNIT_MAXPOWER', 'player', 'MANA')
+now = 512; Draw()
+assert(textures[1].shown and textures[1].point[4] == 100,
+    'capacity changes must not forget an ongoing periodic mana channel')
+Event('UNIT_SPELLCAST_CHANNEL_STOP', 'player', 'cast-guid', 128)
+now = 517; Draw()
+assert(not textures[1].shown and textures[2].shown)
+Change(550)
+assert(texts[1].text == '-50', 'mana deltas resume from the new capacity baseline')
+now = 518
+Event('UNIT_MAXPOWER', 'player', 'ENERGY'); Draw()
+assert(textures[1].shown and textures[1].point[4] == 80 and texts[1].shown,
+    'inactive resource capacity changes must not reset mana tracking')
+Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+assert(not textures[1].shown and not texts[1].shown, 'resource switches still clear all tracking')
+if layout ~= 'legacy' then
+    now = 520
+    Event('UNIT_SPELLCAST_SUCCEEDED', 'player', 'cast-guid', 123)
+    now = 521
+    for _, values in ipairs({{secret, 1300}, {500, secret}, {secret, secret}}) do
+        mana, maximum = values[1], values[2]
+        Event('UNIT_MAXPOWER', 'player', 'MANA'); Draw()
+        assert(textures[1].shown and textures[1].point[4] == 80 and not texts[1].shown,
+            'restricted current or maximum mana preserves the countdown without numeric tracking')
+    end
+    maximum = 1300; mana = 500
+    Event('UNIT_MAXPOWER', 'player', 'MANA'); Draw()
+    assert(textures[1].shown and textures[1].point[4] == 80 and not texts[1].shown,
+        'readable capacity recovery preserves the countdown and resets the numeric baseline')
+end
+now = 530; resource = 3; mana = 30; maximum = 100
+Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+now = 530.5; Change(50, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+now = 531; mana = 60; maximum = 120
+Event('UNIT_MAXPOWER', 'player', 'ENERGY'); Draw()
+assert(textures[2].shown and textures[2].point[4] == 25 and not textures[1].shown and not texts[1].shown,
+    'energy capacity changes reset numeric tracking without restarting the two-second estimate')
+now = 532; Change(80, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+assert(texts[1].text == '+20' and textures[2].point[4] == 0,
+    'energy ticks resume from the new capacity baseline')
+if layout ~= 'legacy' then
+    Event('UNIT_MAXPOWER', secret, 'ENERGY')
+    Event('UNIT_MAXPOWER', 'player', secret)
+    Draw()
+    assert(texts[1].shown and texts[1].text == '+20', 'restricted event payloads must leave tracking untouched')
+    for _, values in ipairs({{secret, 120}, {80, secret}, {secret, secret}}) do
+        mana, maximum = values[1], values[2]
+        Event('UNIT_MAXPOWER', 'player', 'ENERGY'); Draw()
+        assert(not textures[1].shown and textures[2].shown and not texts[1].shown,
+            'restricted current or maximum energy must suppress numeric tracking')
+        assert(rawequal(textures[2].alpha, secret), 'restricted opacity must pass directly to the native display')
+    end
+    mana = 70; maximum = 120
+    Event('UNIT_MAXPOWER', 'player', 'ENERGY'); Draw()
+    assert(not texts[1].shown, 'energy restriction recovery must establish a fresh baseline')
+    Change(90, 'UNIT_POWER_UPDATE', 'player', 'ENERGY')
+    assert(texts[1].text == '+20', 'energy gains resume from the readable baseline')
+    resource = secret
+    Event('UNIT_MAXPOWER', 'player', 'ENERGY'); Draw()
+    assert(not textures[1].shown and not textures[2].shown and not texts[1].shown,
+        'a restricted resource type must hide the display without querying restricted power types')
+end
+inCombat = false
 print('Runtime behavior checks passed: ' .. layout)
 end
 Run('forever')

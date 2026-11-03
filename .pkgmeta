@@ -7,8 +7,14 @@ ignore:
   - .github
   - .gitignore
   - .pkgmeta
+  - .compiled
+  - .release
+  - AGENTS.md
   - VERSION
+  - cmd
   - docs
+  - internal
+  - go.mod
   - tools
   - tests
   - "**/.DS_Store"

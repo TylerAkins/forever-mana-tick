@@ -7,7 +7,7 @@ See estimated mana and energy tick timing right on your default player power bar
 - Mana gains appear in blue, energy gains in yellow, and losses in purple when the client allows those values to be read.
 - Supports mana users, rogues, and druids in cat form.
 
-There are no settings to configure and no additional addons required. Install it, enable it, and use the default Blizzard player frame.
+No additional addons are required. Install it, enable it, and use the default Blizzard player frame. Adjust the spark size under **Esc > Options > AddOns > Forever Mana Tick**; the selection is saved account-wide.
 
 ## Compatibility
 

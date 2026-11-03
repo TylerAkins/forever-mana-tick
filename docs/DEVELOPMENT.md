@@ -37,3 +37,4 @@ Record the build from GetBuildInfo.
 7. Repeat casting in combat, use a potion, and test with other installed addons. Record errors and the expected potion-induced timing reset.
 8. Verify the 100% default spark size on the default bar at the intended UI scale. Confirm the slider still ranges from 50% to 150%, updates both sparks immediately, and retains the selected value after relogging.
 9. With restricted resource values, cast a mana-cost spell and verify the estimated countdown, followed by the sweep. Verify the native curve hides the regeneration spark at full resource. Check a periodic mana channel and a free spell. Numeric gain/loss text should remain absent while power is restricted.
+10. Change maximum mana during an active countdown and during a periodic mana channel. Confirm numeric gain/loss text resets without interrupting the countdown or forgetting the channel. A capacity event for an inactive resource must not reset the active display.
