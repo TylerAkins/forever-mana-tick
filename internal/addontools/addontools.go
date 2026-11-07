@@ -110,7 +110,7 @@ func InstallAddon(buildDir, addonsDir string) (string, error) {
 	return destination, nil
 }
 
-// DefaultAddonsDir resolves the default Forever beta AddOns directory on this Mac.
+// DefaultAddonsDir resolves the default Forever AddOns directory on this Mac.
 func DefaultAddonsDir() string {
 	if configured := os.Getenv("WOW_FOREVER_ADDONS"); configured != "" {
 		return expandUser(configured)
@@ -120,8 +120,8 @@ func DefaultAddonsDir() string {
 		home = ""
 	}
 	candidates := []string{
-		"/Applications/World of Warcraft/_classic_beta_/Interface/AddOns",
-		filepath.Join(home, "Library/Application Support/World of Warcraft/_classic_beta_/Interface/AddOns"),
+		"/Applications/World of Warcraft/_forever_/Interface/AddOns",
+		filepath.Join(home, "Library/Application Support/World of Warcraft/_forever_/Interface/AddOns"),
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(filepath.Dir(filepath.Dir(filepath.Dir(candidate)))); err == nil {
