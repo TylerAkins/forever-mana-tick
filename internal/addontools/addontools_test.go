@@ -166,6 +166,15 @@ func TestInstallRequiresABuiltAddon(t *testing.T) {
 	}
 }
 
+func TestDefaultAddonsDirUsesForeverClient(t *testing.T) {
+	t.Setenv("WOW_FOREVER_ADDONS", "")
+	t.Setenv("HOME", t.TempDir())
+	want := "/Applications/World of Warcraft/_forever_/Interface/AddOns"
+	if got := DefaultAddonsDir(); got != want {
+		t.Fatalf("default AddOns directory = %q, want %q", got, want)
+	}
+}
+
 func TestRunCompileInstallsIntoTheSelectedDirectory(t *testing.T) {
 	root := repositoryRoot(t)
 	workspace := t.TempDir()
