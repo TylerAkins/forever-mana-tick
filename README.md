@@ -1,6 +1,6 @@
 # Forever Mana Tick
 
-Mana and energy timing indicators for the default player power bar in **WoW Forever**.
+Mana and energy timing indicators for the default player power bar and personal resource display in **WoW Forever**.
 
 ## Features
 
@@ -8,7 +8,7 @@ Mana and energy timing indicators for the default player power bar in **WoW Fore
 - A second spark moves from left to right over an estimated two-second mana or energy regeneration cycle.
 - The spark size matches the default power bar and can be adjusted in the addon options.
 - Readable mana gains appear in blue, energy gains in yellow, and losses in purple, then fade.
-- The display switches between mana and energy, including druid cat form. Other resources hide the indicators. The selected spark size is saved account-wide. No external dependencies are required.
+- The display switches between mana and energy. In druid cat form, the personal resource display can also show a separate mana timer on its alternate bar. Other resources hide the indicators. The selected spark size is saved account-wide. No external dependencies are required.
 
 ## Installation
 
@@ -18,9 +18,9 @@ The installed layout must be `Interface/AddOns/ForeverManaTick/ForeverManaTick.t
 
 ## Compatibility and limitations
 
-This port targets WoW Forever beta build **1.60.1.70338**, Interface **16001**. Client source and mocked runtime checks have been inspected; in-game verification is pending. Retail, Era, and other Classic clients are outside the supported scope.
+This port targets WoW Forever beta build **1.60.1.70338**, Interface **16001**. Client source and mocked runtime checks have been inspected. The personal resource display was tested in game; the full client verification checklist remains pending. Retail, Era, and other Classic clients are outside the supported scope.
 
-The addon follows Blizzard's default player mana bar. Replacement unit frames that hide that bar will also hide the indicators.
+The addon follows Blizzard's default player power bar and, when available, the personal resource display's primary power bar and a druid's alternate mana bar in cat form. The personal display's sparks hide with its power bar. Replacement unit frames that hide the default bar can also stop the timing updates.
 
 Adjust the spark size under **Esc > Options > AddOns > Forever Mana Tick**. The default slider value is 100%, which uses the spark size previously shown at 150%.
 
