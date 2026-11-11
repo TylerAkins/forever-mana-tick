@@ -29,13 +29,24 @@ local manaBar = {
     GetHeight = function() return 24 end,
     GetFrameLevel = function() return 2 end,
 }
+local personalPowerBar = {
+    GetWidth = function() return 160 end,
+    GetHeight = function() return 10 end,
+    GetFrameLevel = function() return 4 end,
+}
+local alternatePowerBar = {GetWidth = function() return 140 end, GetHeight = function() return 8 end,
+    GetFrameLevel = function() return 4 end}
+local alternateMana, alternateMax = 500, 1000
+UnitClass = function() return 'Druid', 'DRUID' end
+PersonalResourceDisplayFrame = nil
+InCombatLockdown = function() return inCombat end
 local playerFrame = {PlayerFrameContent = {PlayerFrameContentMain = {ManaBarArea = {ManaBar = manaBar}}}}
 PlayerFrameManaBar = layout == 'legacy' and manaBar or nil
 PlayerFrame = (layout == 'forever' or layout == 'secret') and playerFrame or nil
 if layout == 'secret' then mana = secret end
 GetTime = function() return now end
-UnitPower = function(unit, power) assert(unit == 'player' and (power == 0 or power == 3)); return mana end
-UnitPowerMax = function(unit, power) assert(unit == 'player' and (power == 0 or power == 3)); return maximum end
+UnitPower = function(unit, power) assert(unit == 'player' and (power == 0 or power == 3)); if power == 0 and resource == 3 and PersonalResourceDisplayFrame and PersonalResourceDisplayFrame.AlternatePowerBar then return alternateMana end; return mana end
+UnitPowerMax = function(unit, power) assert(unit == 'player' and (power == 0 or power == 3)); if power == 0 and resource == 3 and PersonalResourceDisplayFrame and PersonalResourceDisplayFrame.AlternatePowerBar then return alternateMax end; return maximum end
 UnitPowerType = function() return resource end
 Enum = {LuaCurveType = {Step = 1}}
 C_CurveUtil = {CreateCurve = function()
@@ -43,9 +54,10 @@ C_CurveUtil = {CreateCurve = function()
         AddPoint = function(_, x, y) assert((x == 0 and y == 1) or (x == 1 and y == 0)) end}
 end}
 UnitPowerPercent = function(unit, power, unmodified, curve)
-    assert(unit == 'player' and power == resource and unmodified == false and curve)
-    if rawequal(mana, secret) or rawequal(maximum, secret) then return secret end
-    return mana < maximum and 1 or 0
+    assert(unit == 'player' and (power == resource or (power == 0 and resource == 3)) and unmodified == false and curve)
+    local value, max = UnitPower(unit, power), UnitPowerMax(unit, power)
+    if rawequal(value, secret) or rawequal(max, secret) then return secret end
+    return value < max and 1 or 0
 end
 local spellCosts = {
     [123] = {{type = 0, cost = 50}},
@@ -81,7 +93,7 @@ local function BaseFrame()
         CreateFontString = function() local r = Region(); texts[#texts + 1] = r; return r end,
     }
 end
-CreateFrame = function(frameType)
+CreateFrame = function(frameType, name, parent)
     if frameType == 'Slider' then
         slider = {
             scripts = {},
@@ -97,7 +109,9 @@ CreateFrame = function(frameType)
         return slider
     end
     local newFrame = BaseFrame()
-    if frameType == 'Frame' and frame then
+    if parent == personalPowerBar or parent == alternatePowerBar then
+        newFrame.parent = parent
+    elseif frameType == 'Frame' and frame then
         optionsPanel = newFrame
         optionsPanel.CreateFontString = function() return Region() end
     else
@@ -129,6 +143,54 @@ if layout == 'delayed' then
     assert(not frame.scripts.OnUpdate, 'missing player frame must wait for world entry')
     PlayerFrame = playerFrame
     Event('PLAYER_ENTERING_WORLD')
+end
+if layout == 'forever' and not savedScale then
+    Draw()
+    assert(#textures == 2, 'an absent personal display must not create indicators')
+    PersonalResourceDisplayFrame = {}
+    Event('ADDON_LOADED', 'Blizzard_PersonalResourceDisplay')
+    assert(#textures == 2, 'a missing personal power bar must be ignored')
+    PersonalResourceDisplayFrame.PowerBar = personalPowerBar
+    inCombat = true
+    Event('ADDON_LOADED', 'Blizzard_PersonalResourceDisplay')
+    assert(#textures == 2, 'personal display creation must wait until combat ends')
+    inCombat = false
+    Event('PLAYER_REGEN_ENABLED')
+    assert(#textures == 4, 'personal sparks must initialize when the bar becomes available')
+    Draw()
+    assert(textures[4].shown and textures[4].point[2] == personalPowerBar,
+        'personal sweep must attach to the primary power bar')
+    Change(400)
+    now = 102.5; Draw()
+    assert(textures[3].shown and not textures[4].shown and textures[3].point[4] == 80,
+        'personal countdown must match the player bar using its own width')
+    now = 105; Draw()
+    assert(not textures[3].shown and textures[4].shown, 'personal sweep follows the countdown')
+    resource = 1; Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+    assert(not textures[3].shown and not textures[4].shown, 'unsupported resources hide personal sparks')
+    PersonalResourceDisplayFrame.AlternatePowerBar = alternatePowerBar
+    Event('ADDON_LOADED', 'Blizzard_PersonalResourceDisplay')
+    assert(#textures == 6, 'a late alternate power bar must acquire its own sparks')
+    resource = 3; mana = 60; maximum = 100; now = 200
+    Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+    assert(textures[4].shown and textures[6].shown and textures[6].point[2] == alternatePowerBar,
+        'cat form displays independent energy and mana sweeps')
+    alternateMana = 450; Event('UNIT_POWER_UPDATE', 'player', 'MANA'); Draw()
+    now = 202.5; Draw()
+    assert(textures[4].shown and textures[5].shown and textures[5].point[4] == 70,
+        'mana loss starts a countdown without interrupting energy')
+    alternateMana = secret; Event('UNIT_POWER_UPDATE', 'player', 'MANA'); Draw()
+    alternateMana = 400; Event('UNIT_POWER_UPDATE', 'player', 'MANA'); Draw()
+    now = 205; Draw()
+    assert(not textures[5].shown and textures[6].shown, 'mana recovery must not fabricate another loss')
+    Event('UNIT_SPELLCAST_SUCCEEDED', 'player', 'cast-guid', 123); Draw()
+    assert(textures[5].shown and textures[4].shown, 'mana-cost casts start only the alternate countdown')
+    now = 210; Draw()
+    alternateMana = 1000; Event('UNIT_POWER_UPDATE', 'player', 'MANA'); Draw()
+    assert(not textures[6].shown and textures[4].shown, 'full mana hides only the mana sweep')
+    resource = 1; Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+    assert(not textures[5].shown and not textures[6].shown, 'other forms hide the alternate indicator')
+    resource = 0; mana = 500; maximum = 1000; now = 100; Event('PLAYER_ENTERING_WORLD')
 end
 assert(frame.scripts.OnUpdate, 'mana display must initialize on ' .. layout .. ' frame layout')
 assert(frame.parent == manaBar, 'display must attach to the visible mana bar')
@@ -278,6 +340,12 @@ assert(textures[1].size[1] == 12 * 1.5 * (savedScale or 1), 'spark width preserv
 slider.scripts.OnValueChanged(slider, 1.25)
 assert(ForeverManaTickDB.sparkScale == 1.25, 'slider changes persist in the addon saved variable')
 assert(textures[1].size[2] == 45 and textures[2].size[2] == 45, 'slider updates both sparks immediately')
+if personalPowerBar == (PersonalResourceDisplayFrame and PersonalResourceDisplayFrame.PowerBar) then
+    assert(textures[3].size[2] == 18.75 and textures[4].size[2] == 18.75,
+        'slider updates personal sparks relative to the personal bar')
+    assert(textures[5].size[2] == 15 and textures[6].size[2] == 15,
+        'slider updates alternate sparks relative to the alternate bar')
+end
 slider.value = 0.5
 optionsPanel.scripts.OnShow(optionsPanel)
 assert(slider.value == 1.25 and ForeverManaTickDB.sparkScale == 1.25, 'opening settings refreshes the saved slider value')

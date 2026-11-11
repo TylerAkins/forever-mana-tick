@@ -10,6 +10,10 @@ local SPARK_BASE_SCALE = 1.5
 local ADDON_TITLE = "Forever Mana Tick"
 local frame = CreateFrame("Frame")
 local bar, fsrSpark, regenSpark, gainText
+local personalBar, personalFsrSpark, personalRegenSpark
+local alternateBar, alternateFsrSpark, alternateRegenSpark
+local alternatePrevious, alternateSpend, alternateTick, alternateGainTime, alternateChannel
+local trackedResource
 local previousPower, lastSpend, tickStart, textStart
 local channelMana, visibilityCurve
 local lastManaGainTime
@@ -67,6 +71,16 @@ local function UpdateSparkSize()
     local width = height / 2
     fsrSpark:SetSize(width, height)
     regenSpark:SetSize(width, height)
+    if personalBar then
+        height = personalBar:GetHeight() * SPARK_BASE_SCALE * sparkScale
+        personalFsrSpark:SetSize(height / 2, height)
+        personalRegenSpark:SetSize(height / 2, height)
+    end
+    if alternateBar then
+        height = alternateBar:GetHeight() * SPARK_BASE_SCALE * sparkScale
+        alternateFsrSpark:SetSize(height / 2, height)
+        alternateRegenSpark:SetSize(height / 2, height)
+    end
 end
 
 local function SetSparkScale(value)
@@ -125,16 +139,38 @@ local function ClearTracking()
     channelMana = nil
     lastManaGainTime = nil
     tickStart = GetTime()
+    alternatePrevious, alternateSpend, alternateTick, alternateGainTime, alternateChannel = nil, nil, nil, nil, nil
+    if alternateBar then
+        alternateFsrSpark:Hide()
+        alternateRegenSpark:Hide()
+    end
     if gainText then
         fsrSpark:Hide()
         regenSpark:Hide()
         gainText:Hide()
+        if personalBar then
+            personalFsrSpark:Hide()
+            personalRegenSpark:Hide()
+        end
     end
 end
 
 local function Reset()
-    ClearTracking()
     local resource = UnitPowerType("player")
+    local manaSpend, manaTick, manaGain
+    if Readable(resource) and resource == ENERGY and trackedResource == MANA then
+        manaSpend, manaTick, manaGain = lastSpend, tickStart, lastManaGainTime
+    elseif Readable(resource) and resource == MANA and trackedResource == ENERGY then
+        manaSpend, manaTick, manaGain = alternateSpend, alternateTick, alternateGainTime
+    end
+    ClearTracking()
+    trackedResource = Readable(resource) and resource or nil
+    if trackedResource == ENERGY and alternateBar then
+        alternatePrevious = ReadPower(MANA)
+        alternateSpend, alternateTick, alternateGainTime = manaSpend, manaTick or GetTime(), manaGain
+    elseif trackedResource == MANA and manaTick then
+        lastSpend, tickStart, lastManaGainTime = manaSpend, manaTick, manaGain
+    end
     if Readable(resource) and (resource == MANA or resource == ENERGY) then
         previousPower = ReadPower(resource)
     end
@@ -170,6 +206,91 @@ local function CreateDisplay()
     return true
 end
 
+local function CreatePersonalDisplay()
+    if InCombatLockdown and InCombatLockdown() then return end
+    local display = PersonalResourceDisplayFrame
+    if not display then return end
+    local function CreateSparks(powerBar)
+        local overlay = CreateFrame("Frame", nil, powerBar)
+        overlay:SetAllPoints(powerBar)
+        overlay:SetFrameLevel(powerBar:GetFrameLevel() + 1)
+        local function Spark()
+            local texture = overlay:CreateTexture(nil, "OVERLAY")
+            texture:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
+            texture:SetBlendMode("ADD")
+            texture:Hide()
+            return texture
+        end
+        return Spark(), Spark()
+    end
+    if not personalBar and display.PowerBar then
+        personalBar = display.PowerBar
+        personalFsrSpark, personalRegenSpark = CreateSparks(personalBar)
+    end
+    local _, class = UnitClass("player")
+    if class == "DRUID" and not alternateBar and display.AlternatePowerBar then
+        alternateBar = display.AlternatePowerBar
+        alternateFsrSpark, alternateRegenSpark = CreateSparks(alternateBar)
+        alternatePrevious = ReadPower(MANA)
+        alternateTick = GetTime()
+    end
+    UpdateSparkSize()
+end
+
+local function UpdateAlternateDisplay(now, resource)
+    if not alternateBar then return end
+    if resource ~= ENERGY then
+        alternateFsrSpark:Hide()
+        alternateRegenSpark:Hide()
+        return
+    end
+    local current, maximum = ReadPower(MANA)
+    if not current then alternatePrevious = nil end
+    if current and not alternatePrevious then alternatePrevious = current end
+    if alternateChannel then alternateSpend = now end
+    local elapsed = alternateSpend and now - alternateSpend
+    if elapsed and elapsed < FSR_SECONDS then
+        alternateFsrSpark:ClearAllPoints()
+        alternateFsrSpark:SetPoint("CENTER", alternateBar, "LEFT", alternateBar:GetWidth() * (1 - elapsed / FSR_SECONDS), 0)
+        alternateFsrSpark:Show()
+        alternateRegenSpark:Hide()
+    else
+        alternateFsrSpark:Hide()
+        if (current and maximum > 0 and current < maximum) or (not current and visibilityCurve) then
+            local progress = ((now - (alternateTick or now)) % TICK_SECONDS) / TICK_SECONDS
+            alternateRegenSpark:ClearAllPoints()
+            alternateRegenSpark:SetPoint("CENTER", alternateBar, "LEFT", alternateBar:GetWidth() * progress, 0)
+            if visibilityCurve then
+                alternateRegenSpark:SetAlpha(UnitPowerPercent("player", MANA, false, visibilityCurve))
+            else
+                alternateRegenSpark:SetAlpha(1)
+            end
+            alternateRegenSpark:Show()
+        else
+            alternateRegenSpark:Hide()
+        end
+    end
+end
+
+local function UpdatePersonalDisplay(fsrProgress, regenProgress, alpha)
+    if not personalBar then return end
+    if fsrProgress then
+        personalFsrSpark:ClearAllPoints()
+        personalFsrSpark:SetPoint("CENTER", personalBar, "LEFT", personalBar:GetWidth() * fsrProgress, 0)
+        personalFsrSpark:Show()
+    else
+        personalFsrSpark:Hide()
+    end
+    if regenProgress then
+        personalRegenSpark:ClearAllPoints()
+        personalRegenSpark:SetPoint("CENTER", personalBar, "LEFT", personalBar:GetWidth() * regenProgress, 0)
+        personalRegenSpark:SetAlpha(alpha)
+        personalRegenSpark:Show()
+    else
+        personalRegenSpark:Hide()
+    end
+end
+
 local function UpdateDisplay()
     local now = GetTime()
     local resource = UnitPowerType("player")
@@ -189,29 +310,36 @@ local function UpdateDisplay()
         previousPower = current
     end
     if resource == MANA and channelMana then lastSpend = now end
+    local fsrProgress, regenProgress, regenAlpha
     local elapsed = lastSpend and now - lastSpend
     if resource == MANA and elapsed and elapsed < FSR_SECONDS then
+        fsrProgress = 1 - elapsed / FSR_SECONDS
         fsrSpark:ClearAllPoints()
-        fsrSpark:SetPoint("CENTER", bar, "LEFT", bar:GetWidth() * (1 - elapsed / FSR_SECONDS), 0)
+        fsrSpark:SetPoint("CENTER", bar, "LEFT", bar:GetWidth() * fsrProgress, 0)
         fsrSpark:Show()
         regenSpark:Hide()
     else
         fsrSpark:Hide()
         if (current and previousPower < maximum) or (not current and visibilityCurve) then
             local progress = ((now - tickStart) % TICK_SECONDS) / TICK_SECONDS
+            regenProgress = progress
             regenSpark:ClearAllPoints()
             regenSpark:SetPoint("CENTER", bar, "LEFT", bar:GetWidth() * progress, 0)
             if visibilityCurve then
                 -- The native display accepts this result even when power is restricted.
-                regenSpark:SetAlpha(UnitPowerPercent("player", resource, false, visibilityCurve))
+                regenAlpha = UnitPowerPercent("player", resource, false, visibilityCurve)
+                regenSpark:SetAlpha(regenAlpha)
             else
-                regenSpark:SetAlpha(1)
+                regenAlpha = 1
+                regenSpark:SetAlpha(regenAlpha)
             end
             regenSpark:Show()
         else
             regenSpark:Hide()
         end
     end
+    UpdatePersonalDisplay(fsrProgress, regenProgress, regenAlpha)
+    UpdateAlternateDisplay(now, resource)
     if textStart then
         local age = now - textStart
         if age >= 1.5 then
@@ -227,18 +355,22 @@ end
 frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
     if event == "ADDON_LOADED" then
-        if unit ~= addonName then return end
-        self:UnregisterEvent("ADDON_LOADED")
+        if unit ~= addonName then
+            if bar then CreatePersonalDisplay() end
+            return
+        end
         if type(ForeverManaTickDB) ~= "table" then ForeverManaTickDB = {} end
         sparkScale = NormalizeSparkScale(ForeverManaTickDB.sparkScale)
         ForeverManaTickDB.sparkScale = sparkScale
         CreateOptions()
         self:RegisterEvent("PLAYER_ENTERING_WORLD")
         self:RegisterEvent("PLAYER_LOGIN")
+        self:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         if not bar and not CreateDisplay() then return end
+        CreatePersonalDisplay()
         Reset()
         self:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
         self:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
@@ -248,23 +380,50 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
         self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
         self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
         self:SetScript("OnUpdate", UpdateDisplay)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if bar then CreatePersonalDisplay() end
     elseif Readable(unit) and unit == "player" then
         if event == "UNIT_DISPLAYPOWER" then
             Reset()
         elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
             local resource = UnitPowerType("player")
-            if Readable(resource) and resource == MANA and ManaCost(spellID) then lastSpend = GetTime() end
+            if Readable(resource) and ManaCost(spellID) then
+                if resource == MANA then lastSpend = GetTime()
+                elseif resource == ENERGY and alternateBar then alternateSpend = GetTime() end
+            end
         elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
             local _, periodic = ManaCost(spellID)
             local resource = UnitPowerType("player")
             channelMana = Readable(resource) and resource == MANA and periodic or nil
             if channelMana then lastSpend = GetTime() end
+            alternateChannel = Readable(resource) and resource == ENERGY and alternateBar and periodic or nil
+            if alternateChannel then alternateSpend = GetTime() end
         elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
             if channelMana then lastSpend = GetTime() end
-            channelMana = nil
+            if alternateChannel then alternateSpend = GetTime() end
+            channelMana, alternateChannel = nil, nil
         elseif Readable(powerType) and (powerType == "MANA" or powerType == "ENERGY") then
             local resource = UnitPowerType("player")
             if not Readable(resource) or (resource ~= MANA and resource ~= ENERGY) then return end
+            if resource == ENERGY and powerType == "MANA" and alternateBar then
+                local current = ReadPower(MANA)
+                if not current then
+                    alternatePrevious = nil
+                elseif event == "UNIT_MAXPOWER" or not alternatePrevious then
+                    alternatePrevious = current
+                else
+                    local delta = current - alternatePrevious
+                    alternatePrevious = current
+                    local now = GetTime()
+                    if delta < 0 then
+                        alternateSpend = now
+                    elseif delta > 0 then
+                        if not alternateGainTime or now - alternateGainTime >= 1.4 then alternateTick = now end
+                        alternateGainTime = now
+                    end
+                end
+                return
+            end
             if (resource == MANA and powerType ~= "MANA") or (resource == ENERGY and powerType ~= "ENERGY") then return end
             local current, maximum = ReadPower(resource)
             if not current then

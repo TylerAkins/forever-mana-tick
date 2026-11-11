@@ -21,7 +21,7 @@ package_commit="$(git rev-parse --verify HEAD 2>/dev/null || echo uncommitted)"
 cat > "$package_path.manifest.txt" <<EOF
 version=$addon_version
 commit=$package_commit
-flavor=WoW Forever beta
+flavor=WoW Forever
 interface=$(sed -n 's/^## Interface: //p' ForeverManaTick.toc)
 channel=release
 file=$(basename "$package_path")
