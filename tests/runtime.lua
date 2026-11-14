@@ -22,6 +22,7 @@ local function Region()
         end,
         SetTextColor = function(self, ...) self.color = {...} end,
         SetAlpha = function(self, value) self.alpha = value end,
+        IsShown = function(self) return self.shown == true end,
     }
 end
 local manaBar = {
@@ -36,13 +37,32 @@ local personalPowerBar = {
 }
 local alternatePowerBar = {GetWidth = function() return 140 end, GetHeight = function() return 8 end,
     GetFrameLevel = function() return 4 end}
+local leatrixManaBar = {
+    GetWidth = function() return 120 end,
+    GetHeight = function() return 24 end,
+    GetFrameLevel = function() return 3 end,
+    IsShown = function() return true end,
+    GetParent = function() return PlayerFrame end,
+    IsObjectType = function() return 'StatusBar' end,
+    Mask = true,
+    TextString = true,
+    LeftText = true,
+    RightText = true,
+    GetStatusBarTexture = function()
+        return {GetTexture = function() return 8036209 end}
+    end,
+}
+local otherChild = {IsObjectType = function() return 'Frame' end}
 local alternateMana, alternateMax = 500, 1000
 UnitClass = function() return 'Druid', 'DRUID' end
 PersonalResourceDisplayFrame = nil
 InCombatLockdown = function() return inCombat end
-local playerFrame = {PlayerFrameContent = {PlayerFrameContentMain = {ManaBarArea = {ManaBar = manaBar}}}}
+local playerFrame = {PlayerFrameContent = {PlayerFrameContentMain = {ManaBarArea = {ManaBar = manaBar}}},
+    GetChildren = function()
+        if layout == 'leatrix' then return otherChild, leatrixManaBar end
+    end}
 PlayerFrameManaBar = layout == 'legacy' and manaBar or nil
-PlayerFrame = (layout == 'forever' or layout == 'secret') and playerFrame or nil
+PlayerFrame = (layout == 'forever' or layout == 'secret' or layout == 'leatrix') and playerFrame or nil
 if layout == 'secret' then mana = secret end
 GetTime = function() return now end
 UnitPower = function(unit, power) assert(unit == 'player' and (power == 0 or power == 3)); if power == 0 and resource == 3 and PersonalResourceDisplayFrame and PersonalResourceDisplayFrame.AlternatePowerBar then return alternateMana end; return mana end
@@ -54,7 +74,8 @@ C_CurveUtil = {CreateCurve = function()
         AddPoint = function(_, x, y) assert((x == 0 and y == 1) or (x == 1 and y == 0)) end}
 end}
 UnitPowerPercent = function(unit, power, unmodified, curve)
-    assert(unit == 'player' and (power == resource or (power == 0 and resource == 3)) and unmodified == false and curve)
+    assert(unit == 'player' and (power == resource or (power == 0 and (resource == 1 or resource == 3)))
+        and unmodified == false and curve)
     local value, max = UnitPower(unit, power), UnitPowerMax(unit, power)
     if rawequal(value, secret) or rawequal(max, secret) then return secret end
     return value < max and 1 or 0
@@ -89,6 +110,7 @@ local function BaseFrame()
         end,
         SetAllPoints = function() assert(not inCombat, 'power events must not reanchor frames during combat') end,
         SetFrameLevel = function() assert(not inCombat, 'power events must not change frame levels during combat') end,
+        GetFrameLevel = function() return 2 end,
         CreateTexture = function() local r = Region(); textures[#textures + 1] = r; return r end,
         CreateFontString = function() local r = Region(); texts[#texts + 1] = r; return r end,
     }
@@ -109,7 +131,7 @@ CreateFrame = function(frameType, name, parent)
         return slider
     end
     local newFrame = BaseFrame()
-    if parent == personalPowerBar or parent == alternatePowerBar then
+    if parent == personalPowerBar or parent == alternatePowerBar or parent == leatrixManaBar then
         newFrame.parent = parent
     elseif frameType == 'Frame' and frame then
         optionsPanel = newFrame
@@ -143,6 +165,11 @@ if layout == 'delayed' then
     assert(not frame.scripts.OnUpdate, 'missing player frame must wait for world entry')
     PlayerFrame = playerFrame
     Event('PLAYER_ENTERING_WORLD')
+end
+if layout == 'leatrix' then
+    assert(#textures == 4, 'a Leatrix mana bar must acquire its own sparks')
+    assert(textures[3].size[2] == 36 and textures[4].size[2] == 36,
+        'Leatrix sparks follow the addon bar size')
 end
 if layout == 'forever' and not savedScale then
     Draw()
@@ -426,6 +453,34 @@ if layout ~= 'legacy' then
     assert(not textures[1].shown and not textures[2].shown and not texts[1].shown,
         'a restricted resource type must hide the display without querying restricted power types')
 end
+if layout == 'leatrix' then
+    resource = 1; mana = 500; maximum = 1000; now = 600
+    Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+    assert(not textures[1].shown and not textures[2].shown,
+        'bear form must not draw indicators on the rage bar')
+    assert(textures[4].shown and textures[4].point[2] == leatrixManaBar and textures[4].point[4] == 0,
+        'bear form mana sweep must attach to the addon mana bar')
+    Event('UNIT_SPELLCAST_SUCCEEDED', 'player', 'cast-guid', 123); Draw()
+    assert(textures[3].shown and not textures[4].shown,
+        'bear form mana costs must start the addon bar countdown')
+    now = 602.5; Draw()
+    assert(textures[3].point[4] == 60, 'addon bar countdown must use the addon bar width')
+    now = 605; Draw()
+    assert(not textures[3].shown)
+    mana = 520; Event('UNIT_POWER_UPDATE', 'player', 'MANA'); Draw()
+    assert(textures[4].shown and textures[4].point[4] == 0,
+        'bear form mana gains must synchronize the addon tick')
+    now = 606; Draw()
+    assert(textures[4].point[4] == 60, 'addon tick midpoint after a bear form gain')
+    resource = 3; mana = 60; maximum = 100; now = 610
+    Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+    assert(textures[2].shown and textures[4].shown and textures[4].point[2] == leatrixManaBar,
+        'cat form must keep both the energy sweep and the addon mana sweep')
+    resource = 0; mana = 500; maximum = 1000; now = 611
+    Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+    assert(not textures[4].shown and textures[2].shown,
+        'caster form must hide the addon mana sweep and keep the player bar estimate')
+end
 inCombat = false
 print('Runtime behavior checks passed: ' .. layout)
 end
@@ -433,4 +488,5 @@ Run('forever')
 Run('legacy')
 Run('delayed')
 Run('secret')
+Run('leatrix')
 Run('forever', 1.25)
