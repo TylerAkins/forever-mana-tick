@@ -1,7 +1,8 @@
-## 1.1.0 - 2026-11-11
+## 1.2.0 - 2026-11-14
 
-- Add synchronized countdown and regeneration sparks to the personal resource display's primary power bar when available.
-- Show separate energy and mana timers on the personal resource display in druid cat form.
-- Apply the spark size setting to each power bar.
+- Show the mana countdown and regeneration sweep on Leatrix Plus's optional druid power bar in cat and bear form.
+- Follow every visible player mana bar in shapeshift forms, including bars that become available or change after login.
+- Handle restricted visibility, unit, texture, and atlas values without Lua errors.
+- No sparks are added when no compatible mana bar is present.
 
-Targets WoW Forever Interface 16001. The personal resource display was tested in game; the full client verification checklist remains pending.
+Targets WoW Forever Interface 16001. Leatrix Plus compatibility was exercised in game; the full client verification checklist remains pending.

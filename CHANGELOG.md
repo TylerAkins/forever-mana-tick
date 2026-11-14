@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 - 2026-11-14
+
+- Show the mana countdown and regeneration sweep on Leatrix Plus's optional druid power bar in cat and bear form.
+- Follow every visible player mana bar in shapeshift forms, including bars that become available or change after login.
+- Ignore restricted visibility, unit, texture, and atlas values while locating compatible bars.
+- No sparks are added when no compatible mana bar is present.
+
 ## 1.1.0 - 2026-11-11
 
 - Add synchronized countdown and regeneration sparks to the personal resource display's primary power bar when available.

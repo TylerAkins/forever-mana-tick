@@ -5,7 +5,7 @@ Forever Mana Tick is a small World of Warcraft Forever addon. Keep runtime code 
 ## Runtime behavior
 
 - Follow the default player power bar in the Forever player-frame hierarchy. Preserve the legacy `PlayerFrameManaBar` fallback and its runtime fixture.
-- Track only the player's active mana or energy resource. Druid energy applies in cat form; other forms and resources hide the indicators.
+- Track only the player's active mana or energy resource. Druid energy applies in cat form; other forms and resources hide the indicators. Player-frame alternate mana bars, including the optional Leatrix Plus druid power bar, are the exception: they can show the mana indicators in cat and bear form.
 - Treat `UnitPower` and `UnitPowerMax` results as potentially restricted. Check them before arithmetic, comparison, or text formatting, and reset the numeric baseline when they become readable again.
 - Keep the mana five-second-rule countdown separate from the two-second regeneration estimate. Energy gains can synchronize the estimate when they look like a 20- or 40-energy tick or reach the cap.
 - Keep spark sizing relative to the default bar. Add persistent options to the TOC's declared saved-variable table and cover defaults, saved values, and live updates in the runtime fixture.

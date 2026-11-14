@@ -1,5 +1,6 @@
 local addonName = ...
 local MANA = 0
+local RAGE = 1
 local ENERGY = 3
 local TICK_SECONDS = 2
 local FSR_SECONDS = 5
@@ -12,6 +13,7 @@ local frame = CreateFrame("Frame")
 local bar, fsrSpark, regenSpark, gainText
 local personalBar, personalFsrSpark, personalRegenSpark
 local alternateBar, alternateFsrSpark, alternateRegenSpark
+local leatrixBars = {}
 local alternatePrevious, alternateSpend, alternateTick, alternateGainTime, alternateChannel
 local trackedResource
 local previousPower, lastSpend, tickStart, textStart
@@ -22,6 +24,13 @@ local applyingSettings
 
 local function Readable(value)
     return not issecretvalue or not issecretvalue(value)
+end
+
+local function IsRegionShown(region)
+    if not region or not region.IsShown then return false end
+    local shown = region:IsShown()
+    if not Readable(shown) then return false end
+    return shown == true
 end
 
 local function ManaCost(spellID)
@@ -58,6 +67,14 @@ local function IsEnergyTick(delta, current, maximum)
     return current == maximum and delta > 0 and delta < 42
 end
 
+local function IsAlternateResource(resource)
+    return resource == ENERGY or (resource == RAGE and #leatrixBars > 0)
+end
+
+local function HasAlternateBar()
+    return alternateBar ~= nil or #leatrixBars > 0
+end
+
 local function NormalizeSparkScale(value)
     if type(value) ~= "number" or value ~= value then return 1 end
     value = math.max(SPARK_SCALE_MIN, math.min(SPARK_SCALE_MAX, value))
@@ -80,6 +97,11 @@ local function UpdateSparkSize()
         height = alternateBar:GetHeight() * SPARK_BASE_SCALE * sparkScale
         alternateFsrSpark:SetSize(height / 2, height)
         alternateRegenSpark:SetSize(height / 2, height)
+    end
+    for _, display in ipairs(leatrixBars) do
+        height = bar:GetHeight() * SPARK_BASE_SCALE * sparkScale
+        display.fsrSpark:SetSize(height / 2, height)
+        display.regenSpark:SetSize(height / 2, height)
     end
 end
 
@@ -144,6 +166,10 @@ local function ClearTracking()
         alternateFsrSpark:Hide()
         alternateRegenSpark:Hide()
     end
+    for _, display in ipairs(leatrixBars) do
+        display.fsrSpark:Hide()
+        display.regenSpark:Hide()
+    end
     if gainText then
         fsrSpark:Hide()
         regenSpark:Hide()
@@ -157,22 +183,26 @@ end
 
 local function Reset()
     local resource = UnitPowerType("player")
+    local alternateActive = Readable(resource) and IsAlternateResource(resource) and HasAlternateBar()
+    local previousAlternate = trackedResource and IsAlternateResource(trackedResource)
     local manaSpend, manaTick, manaGain
-    if Readable(resource) and resource == ENERGY and trackedResource == MANA then
+    if alternateActive and previousAlternate and trackedResource ~= resource then
+        manaSpend, manaTick, manaGain = alternateSpend, alternateTick, alternateGainTime
+    elseif alternateActive and trackedResource == MANA then
         manaSpend, manaTick, manaGain = lastSpend, tickStart, lastManaGainTime
-    elseif Readable(resource) and resource == MANA and trackedResource == ENERGY then
+    elseif Readable(resource) and resource == MANA and previousAlternate then
         manaSpend, manaTick, manaGain = alternateSpend, alternateTick, alternateGainTime
     end
     ClearTracking()
     trackedResource = Readable(resource) and resource or nil
-    if trackedResource == ENERGY and alternateBar then
+    if alternateActive then
         alternatePrevious = ReadPower(MANA)
         alternateSpend, alternateTick, alternateGainTime = manaSpend, manaTick or GetTime(), manaGain
     elseif trackedResource == MANA and manaTick then
         lastSpend, tickStart, lastManaGainTime = manaSpend, manaTick, manaGain
     end
-    if Readable(resource) and (resource == MANA or resource == ENERGY) then
-        previousPower = ReadPower(resource)
+    if trackedResource == MANA or trackedResource == ENERGY then
+        previousPower = ReadPower(trackedResource)
     end
 end
 
@@ -237,38 +267,162 @@ local function CreatePersonalDisplay()
     UpdateSparkSize()
 end
 
-local function UpdateAlternateDisplay(now, resource)
-    if not alternateBar then return end
-    if resource ~= ENERGY then
-        alternateFsrSpark:Hide()
-        alternateRegenSpark:Hide()
-        return
+local function IsPlayerManaBar(candidate)
+    local unit = candidate.unit
+    if not Readable(unit) then return false end
+    if unit == nil then return true end
+    if type(unit) ~= "string" then return false end
+    return unit == "player"
+end
+
+local function MatchesLeatrixManaBar(candidate)
+    if candidate == bar or not candidate.GetStatusBarTexture or not IsPlayerManaBar(candidate) then
+        return false
     end
-    local current, maximum = ReadPower(MANA)
-    if not current then alternatePrevious = nil end
-    if current and not alternatePrevious then alternatePrevious = current end
-    if alternateChannel then alternateSpend = now end
-    local elapsed = alternateSpend and now - alternateSpend
-    if elapsed and elapsed < FSR_SECONDS then
-        alternateFsrSpark:ClearAllPoints()
-        alternateFsrSpark:SetPoint("CENTER", alternateBar, "LEFT", alternateBar:GetWidth() * (1 - elapsed / FSR_SECONDS), 0)
-        alternateFsrSpark:Show()
-        alternateRegenSpark:Hide()
-    else
-        alternateFsrSpark:Hide()
-        if (current and maximum > 0 and current < maximum) or (not current and visibilityCurve) then
-            local progress = ((now - (alternateTick or now)) % TICK_SECONDS) / TICK_SECONDS
-            alternateRegenSpark:ClearAllPoints()
-            alternateRegenSpark:SetPoint("CENTER", alternateBar, "LEFT", alternateBar:GetWidth() * progress, 0)
-            if visibilityCurve then
-                alternateRegenSpark:SetAlpha(UnitPowerPercent("player", MANA, false, visibilityCurve))
-            else
-                alternateRegenSpark:SetAlpha(1)
-            end
-            alternateRegenSpark:Show()
-        else
-            alternateRegenSpark:Hide()
+    local texture = candidate:GetStatusBarTexture()
+    local path = texture and texture.GetTexture and texture:GetTexture()
+    if Readable(path) and type(path) == "string"
+        and path:lower():find("player-portraiton-bar-mana", 1, true) then
+        return true
+    end
+    local atlas = texture and texture.GetAtlas and texture:GetAtlas()
+    if Readable(atlas) and type(atlas) == "string"
+        and atlas:lower():find("player-portraiton-bar-mana", 1, true) then
+        return true
+    end
+    local mask, text, left, right = candidate.Mask, candidate.TextString, candidate.LeftText, candidate.RightText
+    if not (Readable(mask) and Readable(text) and Readable(left) and Readable(right)) then return false end
+    return mask and text and left and right and not candidate.unit
+end
+
+local function CollectManaBars(frameToWalk, found, seen)
+    for _, child in ipairs({frameToWalk:GetChildren()}) do
+        if not seen[child] then
+            seen[child] = true
+            if MatchesLeatrixManaBar(child) then found[#found + 1] = child end
+            if child.GetChildren then CollectManaBars(child, found, seen) end
         end
+    end
+end
+
+local function FindPlayerManaBars(includeShownGlobal)
+    local _, class = UnitClass("player")
+    if class ~= "DRUID" then return {} end
+    local found, seen = {}, {}
+    if PlayerFrame and PlayerFrame.GetChildren then
+        CollectManaBars(PlayerFrame, found, seen)
+    end
+    if includeShownGlobal and EnumerateFrames then
+        local candidate = EnumerateFrames()
+        while candidate do
+            if not seen[candidate] and IsRegionShown(candidate)
+                and MatchesLeatrixManaBar(candidate) then
+                found[#found + 1] = candidate
+                seen[candidate] = true
+            end
+            candidate = EnumerateFrames(candidate)
+        end
+    end
+    return found
+end
+
+local function CreateLeatrixDisplays()
+    if InCombatLockdown and InCombatLockdown() then return end
+    local anyShown = false
+    for _, display in ipairs(leatrixBars) do
+        if IsRegionShown(display.bar) then
+            anyShown = true
+            break
+        end
+    end
+    local resource = UnitPowerType("player")
+    local alternateForm = Readable(resource) and (resource == ENERGY or resource == RAGE)
+    for _, target in ipairs(FindPlayerManaBars(alternateForm and not anyShown)) do
+        local known = false
+        for _, display in ipairs(leatrixBars) do
+            if display.bar == target then
+                known = true
+                break
+            end
+        end
+        if not known then
+            local width = target.GetWidth and target:GetWidth()
+            if not Readable(width) or type(width) ~= "number" then width = bar:GetWidth() end
+            local overlay = CreateFrame("Frame", nil, target)
+            overlay:SetAllPoints(target)
+            overlay:SetFrameLevel(bar:GetFrameLevel() + 2)
+            local function Spark()
+                local texture = overlay:CreateTexture(nil, "OVERLAY")
+                texture:SetTexture("Interface\\CastingBar\\UI-CastingBar-Spark")
+                texture:SetBlendMode("ADD")
+                texture:Hide()
+                return texture
+            end
+            leatrixBars[#leatrixBars + 1] = {
+                bar = target,
+                width = width,
+                overlay = overlay,
+                fsrSpark = Spark(),
+                regenSpark = Spark(),
+            }
+        end
+    end
+    if not alternatePrevious then alternatePrevious = ReadPower(MANA) end
+    if not alternateTick then alternateTick = GetTime() end
+    UpdateSparkSize()
+end
+
+local function CreateCompatibleDisplays()
+    CreatePersonalDisplay()
+    CreateLeatrixDisplays()
+end
+
+local function RenderAlternateSparks(targetBar, width, fsrSparkToDraw, regenSparkToDraw, fsrProgress, regenProgress, regenAlpha)
+    if not targetBar then return end
+    if fsrProgress then
+        fsrSparkToDraw:ClearAllPoints()
+        fsrSparkToDraw:SetPoint("CENTER", targetBar, "LEFT", width * fsrProgress, 0)
+        fsrSparkToDraw:Show()
+    else
+        fsrSparkToDraw:Hide()
+    end
+    if regenProgress then
+        regenSparkToDraw:ClearAllPoints()
+        regenSparkToDraw:SetPoint("CENTER", targetBar, "LEFT", width * regenProgress, 0)
+        regenSparkToDraw:SetAlpha(regenAlpha)
+        regenSparkToDraw:Show()
+    else
+        regenSparkToDraw:Hide()
+    end
+end
+
+local function UpdateAlternateDisplay(now, resource)
+    if not HasAlternateBar() then return end
+    local fsrProgress, regenProgress, regenAlpha
+    if IsAlternateResource(resource) then
+        local current, maximum = ReadPower(MANA)
+        if not current then alternatePrevious = nil end
+        if current and not alternatePrevious then alternatePrevious = current end
+        if alternateChannel then alternateSpend = now end
+        local elapsed = alternateSpend and now - alternateSpend
+        if elapsed and elapsed < FSR_SECONDS then
+            fsrProgress = 1 - elapsed / FSR_SECONDS
+        elseif (current and maximum > 0 and current < maximum) or (not current and visibilityCurve) then
+            regenProgress = ((now - (alternateTick or now)) % TICK_SECONDS) / TICK_SECONDS
+            if visibilityCurve then
+                regenAlpha = UnitPowerPercent("player", MANA, false, visibilityCurve)
+            else
+                regenAlpha = 1
+            end
+        end
+    end
+    if alternateBar then
+        RenderAlternateSparks(alternateBar, alternateBar:GetWidth(), alternateFsrSpark, alternateRegenSpark,
+            fsrProgress, regenProgress, regenAlpha)
+    end
+    for _, display in ipairs(leatrixBars) do
+        RenderAlternateSparks(display.bar, display.width, display.fsrSpark, display.regenSpark,
+            fsrProgress, regenProgress, regenAlpha)
     end
 end
 
@@ -294,8 +448,22 @@ end
 local function UpdateDisplay()
     local now = GetTime()
     local resource = UnitPowerType("player")
-    if not Readable(resource) or (resource ~= MANA and resource ~= ENERGY) then
+    if not Readable(resource) then
         ClearTracking()
+        return
+    end
+    if resource ~= MANA and resource ~= ENERGY then
+        if IsAlternateResource(resource) and HasAlternateBar() then
+            -- The player bar shows rage; only the addon-supplied mana bar gets indicators.
+            if fsrSpark then
+                fsrSpark:Hide()
+                regenSpark:Hide()
+                gainText:Hide()
+            end
+            UpdateAlternateDisplay(now, resource)
+        else
+            ClearTracking()
+        end
         return
     end
     local current, maximum = ReadPower(resource)
@@ -356,7 +524,7 @@ frame:RegisterEvent("ADDON_LOADED")
 frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
     if event == "ADDON_LOADED" then
         if unit ~= addonName then
-            if bar then CreatePersonalDisplay() end
+            if bar then CreateCompatibleDisplays() end
             return
         end
         if type(ForeverManaTickDB) ~= "table" then ForeverManaTickDB = {} end
@@ -370,7 +538,10 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
     end
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
         if not bar and not CreateDisplay() then return end
-        CreatePersonalDisplay()
+        CreateCompatibleDisplays()
+        if #leatrixBars == 0 and C_Timer and C_Timer.After then
+            C_Timer.After(1, CreateLeatrixDisplays)
+        end
         Reset()
         self:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
         self:RegisterUnitEvent("UNIT_POWER_FREQUENT", "player")
@@ -381,22 +552,24 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
         self:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
         self:SetScript("OnUpdate", UpdateDisplay)
     elseif event == "PLAYER_REGEN_ENABLED" then
-        if bar then CreatePersonalDisplay() end
+        if bar then CreateCompatibleDisplays() end
     elseif Readable(unit) and unit == "player" then
         if event == "UNIT_DISPLAYPOWER" then
+            CreateLeatrixDisplays()
+            if C_Timer and C_Timer.After then C_Timer.After(0.2, CreateLeatrixDisplays) end
             Reset()
         elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
             local resource = UnitPowerType("player")
             if Readable(resource) and ManaCost(spellID) then
                 if resource == MANA then lastSpend = GetTime()
-                elseif resource == ENERGY and alternateBar then alternateSpend = GetTime() end
+                elseif IsAlternateResource(resource) and HasAlternateBar() then alternateSpend = GetTime() end
             end
         elseif event == "UNIT_SPELLCAST_CHANNEL_START" then
             local _, periodic = ManaCost(spellID)
             local resource = UnitPowerType("player")
             channelMana = Readable(resource) and resource == MANA and periodic or nil
             if channelMana then lastSpend = GetTime() end
-            alternateChannel = Readable(resource) and resource == ENERGY and alternateBar and periodic or nil
+            alternateChannel = Readable(resource) and IsAlternateResource(resource) and HasAlternateBar() and periodic or nil
             if alternateChannel then alternateSpend = GetTime() end
         elseif event == "UNIT_SPELLCAST_CHANNEL_STOP" then
             if channelMana then lastSpend = GetTime() end
@@ -404,8 +577,8 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
             channelMana, alternateChannel = nil, nil
         elseif Readable(powerType) and (powerType == "MANA" or powerType == "ENERGY") then
             local resource = UnitPowerType("player")
-            if not Readable(resource) or (resource ~= MANA and resource ~= ENERGY) then return end
-            if resource == ENERGY and powerType == "MANA" and alternateBar then
+            if not Readable(resource) then return end
+            if IsAlternateResource(resource) and powerType == "MANA" and HasAlternateBar() then
                 local current = ReadPower(MANA)
                 if not current then
                     alternatePrevious = nil
@@ -424,6 +597,7 @@ frame:SetScript("OnEvent", function(self, event, unit, powerType, spellID)
                 end
                 return
             end
+            if resource ~= MANA and resource ~= ENERGY then return end
             if (resource == MANA and powerType ~= "MANA") or (resource == ENERGY and powerType ~= "ENERGY") then return end
             local current, maximum = ReadPower(resource)
             if not current then
