@@ -6,6 +6,11 @@ local function RestrictedOperation() error('attempt to use restricted mana') end
 local secret = setmetatable({}, {__sub = RestrictedOperation, __lt = RestrictedOperation,
     __le = RestrictedOperation, __concat = RestrictedOperation, __tostring = RestrictedOperation})
 issecretvalue = layout ~= 'legacy' and function(value) return rawequal(value, secret) end or nil
+local function ForbiddenCall()
+    error('Attempt to access forbidden object from code tainted by an AddOn')
+end
+local forbiddenPlayerFrameChild = {GetStatusBarTexture = ForbiddenCall}
+local forbiddenEnumeratedFrame = {IsShown = ForbiddenCall}
 local textures, texts = {}, {}
 local function Region()
     return {
@@ -60,9 +65,18 @@ InCombatLockdown = function() return inCombat end
 local playerFrame = {PlayerFrameContent = {PlayerFrameContentMain = {ManaBarArea = {ManaBar = manaBar}}},
     GetChildren = function()
         if layout == 'leatrix' then return otherChild, leatrixManaBar end
+        if layout == 'scan' then return otherChild, forbiddenPlayerFrameChild end
     end}
 PlayerFrameManaBar = layout == 'legacy' and manaBar or nil
-PlayerFrame = (layout == 'forever' or layout == 'secret' or layout == 'leatrix') and playerFrame or nil
+PlayerFrame = (layout == 'forever' or layout == 'secret' or layout == 'leatrix' or layout == 'scan')
+    and playerFrame or nil
+local enumeratedFrames = layout == 'scan' and {forbiddenEnumeratedFrame, leatrixManaBar} or nil
+EnumerateFrames = enumeratedFrames and function(previous)
+    if not previous then return enumeratedFrames[1] end
+    for index, candidate in ipairs(enumeratedFrames) do
+        if candidate == previous then return enumeratedFrames[index + 1] end
+    end
+end or nil
 if layout == 'secret' then mana = secret end
 GetTime = function() return now end
 UnitPower = function(unit, power) assert(unit == 'player' and (power == 0 or power == 3)); if power == 0 and resource == 3 and PersonalResourceDisplayFrame and PersonalResourceDisplayFrame.AlternatePowerBar then return alternateMana end; return mana end
@@ -170,6 +184,20 @@ if layout == 'leatrix' then
     assert(#textures == 4, 'a Leatrix mana bar must acquire its own sparks')
     assert(textures[3].size[2] == 36 and textures[4].size[2] == 36,
         'Leatrix sparks follow the addon bar size')
+end
+if layout == 'scan' then
+    assert(#textures == 2, 'a forbidden player frame child must not block display creation')
+    resource = 3; mana = 60; maximum = 100; now = 700
+    Event('UNIT_DISPLAYPOWER', 'player'); Draw()
+    assert(#textures == 4, 'a forbidden enumerated frame must not stop the Leatrix scan')
+    assert(textures[3].size[2] == 36 and textures[4].size[2] == 36,
+        'the matched bar past a forbidden frame keeps the expected spark size')
+    assert(textures[4].shown and textures[4].point[2] == leatrixManaBar,
+        'the scan must still attach sparks to the Leatrix mana bar')
+    Event('PLAYER_REGEN_ENABLED')
+    assert(#textures == 4, 'repeat scans must not duplicate the overlay')
+    resource = 0; mana = 500; maximum = 1000; now = 100
+    Event('PLAYER_ENTERING_WORLD')
 end
 if layout == 'forever' and not savedScale then
     Draw()
@@ -489,4 +517,5 @@ Run('legacy')
 Run('delayed')
 Run('secret')
 Run('leatrix')
+Run('scan')
 Run('forever', 1.25)

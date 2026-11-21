@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1 - 2026-11-21
+
+- Skip forbidden frames during the Leatrix Plus mana bar scan so a protected aura button cannot abort the display refresh.
+
 ## 1.2.0 - 2026-11-14
 
 - Show the mana countdown and regeneration sweep on Leatrix Plus's optional druid power bar in cat and bear form.

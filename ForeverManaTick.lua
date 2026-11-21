@@ -28,8 +28,9 @@ end
 
 local function IsRegionShown(region)
     if not region or not region.IsShown then return false end
-    local shown = region:IsShown()
-    if not Readable(shown) then return false end
+    -- Forbidden frames throw on method calls, so a failed check counts as hidden.
+    local ok, shown = pcall(region.IsShown, region)
+    if not ok or not Readable(shown) then return false end
     return shown == true
 end
 
@@ -275,8 +276,8 @@ local function IsPlayerManaBar(candidate)
     return unit == "player"
 end
 
-local function MatchesLeatrixManaBar(candidate)
-    if candidate == bar or not candidate.GetStatusBarTexture or not IsPlayerManaBar(candidate) then
+local function InspectManaBar(candidate)
+    if not candidate.GetStatusBarTexture or not IsPlayerManaBar(candidate) then
         return false
     end
     local texture = candidate:GetStatusBarTexture()
@@ -293,6 +294,13 @@ local function MatchesLeatrixManaBar(candidate)
     local mask, text, left, right = candidate.Mask, candidate.TextString, candidate.LeftText, candidate.RightText
     if not (Readable(mask) and Readable(text) and Readable(left) and Readable(right)) then return false end
     return mask and text and left and right and not candidate.unit
+end
+
+local function MatchesLeatrixManaBar(candidate)
+    if candidate == bar then return false end
+    -- A forbidden frame throws when inspected, so treat any failure as no match.
+    local ok, matches = pcall(InspectManaBar, candidate)
+    return ok and matches == true
 end
 
 local function CollectManaBars(frameToWalk, found, seen)
